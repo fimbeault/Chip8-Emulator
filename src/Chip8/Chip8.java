@@ -15,23 +15,23 @@ import java.math.BigInteger;
 public class Chip8 extends Canvas implements Runnable, KeyListener {
 
 	private static final long serialVersionUID = 1042099242508261715L;
-	private boolean running = false;
+	protected boolean running = false;
 	private static int pixelSize = 16;
 
 	public InputStream game = null;
 
 	private int opcode = 0;
-	private byte[] memory = new byte[4096];
-	private int[] V = new int[16]; // Registers
-	private int I = 0; // Index register
-	private int PC = 0; // Program Counter
+	protected byte[] memory = new byte[4096];
+	protected int[] V = new int[16]; // Registers
+	protected int I = 0; // Index register
+	protected int PC = 0; // Program Counter
 
 	private boolean[] gfx = new boolean[64 * 32];
 	private int delayTimer = 0;
 	private int soundTimer = 0;
 
-	private int[] stack = new int[16];
-	private int SP = 0; // Stack Pointer
+	protected int[] stack = new int[16];
+	protected int SP = 0; // Stack Pointer
 
 	private byte[] key = new byte[16];
 
@@ -69,7 +69,7 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 		running = true;
 	}
 
-	private void initialize()
+	protected void initialize()
 	{
 		PC = 0x200;
 		opcode = 0;
@@ -321,8 +321,8 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 			break;
 
 		case 0xD000: // 0xDXYN : (See Documentation) Draws a sprite at coordinate (VX, VY) that has a width of 8 pixels and a height of N pixels
-			x = (opcode & 0x0F00) >> 8;
-			y = (opcode & 0x00F0) >> 4;
+			x = V[(opcode & 0x0F00) >> 8];
+			y = V[(opcode & 0x00F0) >> 4];
 			int height = opcode & 0x000F;
 			int pixel = 0;
 
