@@ -37,7 +37,7 @@ public class Application {
         thread.setPriority(Thread.MAX_PRIORITY);
         
         emulator.start();
-        emulator.loadGame("Games/PONG");
+        emulator.loadGame("Games/INVADERS");
         
         thread.start();
 	}

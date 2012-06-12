@@ -67,6 +67,7 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 		requestFocus();
 		initialize();
 		running = true;
+		//DrawFontSet();
 	}
 
 	protected void initialize()
@@ -209,6 +210,10 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 			switch(opcode & 0x0FFF)
 			{
 			case 0x00E0: // Clears the screen.
+				for(int i = 0; i < 2048; i++)
+					gfx[i] = false;
+				
+				PC += 2;
 				break;
 
 			case 0x00EE: // Returns from a subroutine.
@@ -244,22 +249,22 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 				PC += 2;
 			break;
 
-			case 0x4000: // 0x4XNN : Skips the next instruction if VX doesn't equal NN.
-				break;
+		case 0x4000: // 0x4XNN : Skips the next instruction if VX doesn't equal NN.
+			break;
 
-			case 0x5000: // 0x5XY0 : Skips the next instruction if VX equals VY.
-				break;
+		case 0x5000: // 0x5XY0 : Skips the next instruction if VX equals VY.
+			break;
 
-			case 0x6000: // 0x6XNN : Sets VX to NN.
-				V[(opcode & 0x0F00) >> 8] = opcode & 0x00FF;
-				PC += 2;
-				break;
+		case 0x6000: // 0x6XNN : Sets VX to NN.
+			V[(opcode & 0x0F00) >> 8] = opcode & 0x00FF;
+			PC += 2;
+			break;
 
-			case 0x7000: // 0x7XNN : Adds NN to VX.
-				x = (opcode & 0x0F00) >> 8;
-		V[x] = 0xFF & (V[x] + (opcode & 0x00FF));
-		PC += 2;
-		break;
+		case 0x7000: // 0x7XNN : Adds NN to VX.
+			x = (opcode & 0x0F00) >> 8;
+			V[x] = 0xFF & (V[x] + (opcode & 0x00FF));
+			PC += 2;
+			break;
 
 		case 0x8000:
 			switch(opcode & 0x000F)
@@ -335,10 +340,11 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 				{
 					if((pixel & (0x80 >> xLine)) != 0) // Collision detection
 					{
-						V[0xF] = 1;
+						if(gfx[x + y * 64] == true)
+							V[0xF] = 1;
+						
+						gfx[(x + xLine) + (y + yLine) * 64] ^= true;
 					}
-
-					gfx[x + xLine + ((y + yLine) * 64)] ^= true;
 				}
 			}
 
@@ -350,9 +356,19 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 			switch(opcode & 0x00FF)
 			{
 			case 0x009E: // 0xEX9E : Skips the next instruction if the key stored in VX is pressed.
+				if(key[V[(opcode & 0x0F00) >> 8]] == 1)
+					PC += 4;
+				
+				else
+					PC += 2;
 				break;
 
 			case 0x00A1: // 0xEXA1 : Skips the next instruction if the key stored in VX isn't pressed.
+				if(key[V[(opcode & 0x0F00) >> 8]] == 0)
+					PC += 4;
+				
+				else
+					PC += 2;
 				break;
 			}
 			break;
