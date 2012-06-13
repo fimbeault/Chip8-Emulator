@@ -11,12 +11,13 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigInteger;
+import java.util.Random;
 
 public class Chip8 extends Canvas implements Runnable, KeyListener {
 
 	private static final long serialVersionUID = 1042099242508261715L;
 	protected boolean running = false;
-	private static int pixelSize = 16;
+	private static int pixelSize = 8;
 
 	public InputStream game = null;
 
@@ -34,6 +35,9 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 	protected int SP = 0; // Stack Pointer
 
 	private byte[] key = new byte[16];
+	private int lastKeyPressed = -1;
+	
+	private Random rand = new Random();
 
 	private byte[] chip8_fontset =
 		{ 
@@ -202,6 +206,7 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 
 		int x = 0;
 		int y = 0;
+		int result = 0;
 
 		switch(opcode & 0xF000)
 		{
@@ -209,13 +214,17 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 			switch(opcode & 0x0FFF)
 			{
 			case 0x00E0: // Clears the screen.
+				for(int i = 0; i < 2048; i++)
+					gfx[i] = false;
+				
+				PC += 2;
 				break;
 
 			case 0x00EE: // Returns from a subroutine.
 				if(SP > 0)
 				{
-					SP--;
 					PC = stack[SP];
+					SP--;
 				}
 				break;
 
@@ -228,38 +237,45 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 			break;
 
 		case 0x2000: // 0x2NNN : Calls subroutine at NNN.
-			stack[SP] = PC;
 			SP++;
+			stack[SP] = PC;
 			PC = opcode & 0x0FFF;
 			break;
 
 		case 0x3000: // 0x3XNN : Skips the next instruction if VX equals NN.
-			x = (opcode & 0x0F00) >> 8;
-			y = opcode & 0x00FF;
-
-			if(V[x] == y)
+			if(V[(opcode & 0x0F00) >> 8] == (opcode & 0x00FF))
 				PC += 4;
 
 			else
 				PC += 2;
 			break;
 
-			case 0x4000: // 0x4XNN : Skips the next instruction if VX doesn't equal NN.
-				break;
-
-			case 0x5000: // 0x5XY0 : Skips the next instruction if VX equals VY.
-				break;
-
-			case 0x6000: // 0x6XNN : Sets VX to NN.
-				V[(opcode & 0x0F00) >> 8] = opcode & 0x00FF;
+		case 0x4000: // 0x4XNN : Skips the next instruction if VX doesn't equal NN.
+			if(V[(opcode & 0x0F00) >> 8] != (opcode & 0x00FF))
+				PC += 4;
+			
+			else
 				PC += 2;
-				break;
+			break;
 
-			case 0x7000: // 0x7XNN : Adds NN to VX.
-				x = (opcode & 0x0F00) >> 8;
-		V[x] = 0xFF & (V[x] + (opcode & 0x00FF));
-		PC += 2;
-		break;
+		case 0x5000: // 0x5XY0 : Skips the next instruction if VX equals VY.
+			if(V[(opcode & 0x0F00) >> 8] == V[(opcode & 0x00F0) >> 4])
+				PC += 4;
+			
+			else
+				PC += 2;
+			break;
+
+		case 0x6000: // 0x6XNN : Sets VX to NN.
+			V[(opcode & 0x0F00) >> 8] = (opcode & 0x00FF);
+			PC += 2;
+			break;
+
+		case 0x7000: // 0x7XNN : Adds NN to VX.
+			x = (opcode & 0x0F00) >> 8;
+			V[x] = 0xFF & (V[x] + (opcode & 0x00FF));
+			PC += 2;
+			break;
 
 		case 0x8000:
 			switch(opcode & 0x000F)
@@ -270,43 +286,96 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 				break;
 
 			case 0x0001: // 0x8XY1 : Sets VX to VX or VY.
+				V[(opcode & 0x0F00) >> 8] |= V[(opcode & 0x00F0) >> 4];
+				PC += 2;
 				break;
 
 			case 0x0002: // 0x8XY2 : Sets VX to VX and VY.
+				V[(opcode & 0x0F00) >> 8] &= V[(opcode & 0x00F0) >> 4];
+				PC += 2;
 				break;
 
 			case 0x0003: // 0x8XY3 : Sets VX to VX xor VY.
+				V[(opcode & 0x0F00) >> 8] ^= V[(opcode & 0x00F0) >> 4];
+				PC += 2;
 				break;
 
 			case 0x0004: // 0x8XY4 : Adds VY to VX. VF is set to 1 when there's a carry, and to 0 when there isn't.
 				x = (opcode & 0x0F00) >> 8;
 				y = (opcode & 0x00F0) >> 4;
+				
+				result = V[x] + V[y];
 
-				if(V[y] > (0xFF - V[x]))
+				if((result & 0xFF) != 0)
+				{
+					V[x] = result - 0xFF;
 					V[0xF] = 1;
+				}
 
 				else
+				{
+					V[x] = result;
 					V[0xF] = 0;
+				}
 
-				V[x] = V[x] + V[y] - 0xFF;
+				
 				PC += 2;
 				break;
 
-			case 0x0005: // 0x8XY5 : VY is subtracted from VX. VF is set to 0 when there's a borrow, and 1 when there isn't.
+			case 0x0005: // 0x8XY5 : VY is subtracted from VX. VF = NOT borrow
+				x = (opcode & 0x0F00) >> 8;
+				y = (opcode & 0x00F0) >> 4;
+				
+				if(V[x] > V[y])
+					V[0xF] = 1;
+				
+				else
+					V[0xF] = 0;
+				
+				V[x] = (V[x] - V[y]) & 0xFF;
+				
+				PC += 2;
 				break;
 
 			case 0x0006: // 0x8XY6 : Shifts VX right by one. VF is set to the value of the least significant bit of VX before the shift
+				x = (opcode & 0x0F00) >> 8;
+
+				V[0xF] = (V[x] & 0x1);
+				V[x] >>= 1;
+				PC += 2;
 				break;
 
 			case 0x0007: // 0x8XY7 : Sets VX to VY minus VX. VF is set to 0 when there's a borrow, and 1 when there isn't.
+				x = (opcode & 0x0F00) >> 8;
+				y = (opcode & 0x00F0) >> 4;
+				
+				if(V[y] > V[x])
+					V[0xF] = 1;
+				
+				else
+					V[0xF] = 0;
+				
+				V[x] = (V[y] - V[x]) & 0xFF;
+				
+				PC += 2;
 				break;
 
 			case 0x000E: // 0x8XYE : Shifts VX left by one. VF is set to the value of the most significant bit of VX before the shift
+				x = (opcode & 0x0F00) >> 8;
+
+				V[0xF] = (V[x] & 0x80);
+				V[x] <<= 1;
+				PC += 2;
 				break;
 			}
 			break;
 
 		case 0x9000: // 0x9XY0 : Skips the next instruction if VX doesn't equal VY.
+			if(V[(opcode & 0x0F00) >> 8] != V[(opcode & 0x00F0) >> 4])
+				PC += 4;
+			
+			else
+				PC += 2;
 			break;
 
 		case 0xA000: // 0xANNN : Sets I to the address NNN.
@@ -315,9 +384,12 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 			break;
 
 		case 0xB000: // 0xBNNN : Jumps to the address NNN plus V0.
+			PC = (opcode & 0x0FFF) + V[0];
 			break;
 
 		case 0xC000: // 0xCXNN : Sets VX to a random number and NN.
+			V[(opcode& 0x0F00) >> 8] = (byte)(rand.nextInt(255)) & (opcode & 0xFF);
+			PC += 2;
 			break;
 
 		case 0xD000: // 0xDXYN : (See Documentation) Draws a sprite at coordinate (VX, VY) that has a width of 8 pixels and a height of N pixels
@@ -335,10 +407,11 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 				{
 					if((pixel & (0x80 >> xLine)) != 0) // Collision detection
 					{
-						V[0xF] = 1;
-					}
+						if(gfx[x + y * 64] == true)
+							V[0xF] = 1;
 
-					gfx[x + xLine + ((y + yLine) * 64)] ^= true;
+						gfx[(x + xLine) + (y + yLine) * 64] ^= true;
+					}
 				}
 			}
 
@@ -350,9 +423,23 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 			switch(opcode & 0x00FF)
 			{
 			case 0x009E: // 0xEX9E : Skips the next instruction if the key stored in VX is pressed.
+				if(key[V[(opcode & 0x0F00) >> 8]] == 1)
+					PC += 4;
+				
+				else
+					PC += 2;
+				
+				ResetKeys();
 				break;
 
 			case 0x00A1: // 0xEXA1 : Skips the next instruction if the key stored in VX isn't pressed.
+				if(key[V[(opcode & 0x0F00) >> 8]] == 0)
+					PC += 4;
+				
+				else
+					PC += 2;
+				
+				ResetKeys();
 				break;
 			}
 			break;
@@ -361,25 +448,37 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 			switch(opcode & 0x00FF)
 			{
 			case 0x0007: // 0xFX07 : Sets VX to the value of the delay timer.
+				V[(opcode & 0x0F00) >> 8] = (byte)delayTimer;
+				PC += 2;
 				break;
 
 			case 0x000A: // 0xFX0A : A key press is awaited, and then stored in VX.
+				if(lastKeyPressed != -1)
+				{
+					V[(opcode & 0x0F00) >> 8] = lastKeyPressed;
+					ResetKeys();
+					PC += 2;
+				}
 				break;
 
 			case 0x0015: // 0xFX15 : Sets the delay timer to VX.
+				delayTimer = V[(opcode & 0x0F00) >> 8];
+				PC += 2;
 				break;
 
 			case 0x0018: // 0xFX18 : Sets the sound timer to VX.
+				soundTimer = V[(opcode & 0x0F00) >> 8];
+				PC += 2;
 				break;
 
 			case 0x001E: // 0xFX1E : Adds VX to I.
-				I += V[(opcode & 0x0F00) >> 8];
+				I = (I + V[(opcode & 0x0F00) >> 8]) & 0xFFFF;
 				PC += 2;
 				break;
 
 			case 0x0029: // 0xFX29 : Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font.
 				x = (opcode & 0x0F00) >> 8;
-				I = V[x] * 5;
+				I = (V[x] * 5) & 0xFFFF;
 				PC += 2;
 				break;
 
@@ -391,6 +490,12 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 				break;
 
 			case 0x0055: // 0xFX55 : Stores V0 to VX in memory starting at address I.
+				x = (opcode & 0x0F00) >> 8;
+				
+				for(int i = 0; i < x; i++)
+					memory[I + i] = (byte) (V[i] & 0x00FF);
+				
+				PC += 2;
 				break;
 
 			case 0x0065: // 0xFX65 : Fills V0 to VX with values from memory starting at address I.
@@ -398,7 +503,7 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 
 				for(int i = 0; i <= x; ++i)
 				{
-					V[i] = memory[I++];
+					V[i] = memory[I + i] & 0xFF;
 				}
 				PC += 2;
 
@@ -478,32 +583,41 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 	{
 		return "0x" + String.format("%02X", s);
 	}
+	
+	private void ResetKeys()
+	{
+		for(int i = 0; i < 16; i++)
+			key[i] = 0;
+		
+		lastKeyPressed = -1;
+	}
 
 	@Override
 	public void keyPressed(KeyEvent arg0) {
 		switch(arg0.getKeyChar())
 		{
-		case '1': key[0] = 1; break;
-		case '2': key[1] = 1; break;
-		case '3': key[2] = 1; break;
-		case '4': key[3] = 1; break;
-		case 'q': key[4] = 1; break;
-		case 'w': key[5] = 1; break;
-		case 'e': key[6] = 1; break;
-		case 'r': key[7] = 1; break;
-		case 'a': key[8] = 1; break;
-		case 's': key[9] = 1; break;
-		case 'd': key[10] = 1; break;
-		case 'f': key[11] = 1; break;
-		case 'z': key[12] = 1; break;
-		case 'x': key[13] = 1; break;
-		case 'c': key[14] = 1; break;
-		case 'v': key[15] = 1; break;
+		case '1': key[0] = 1; lastKeyPressed = 0; break;
+		case '2': key[1] = 1; lastKeyPressed = 1;  break;
+		case '3': key[2] = 1; lastKeyPressed = 2;  break;
+		case '4': key[3] = 1; lastKeyPressed = 3;  break;
+		case 'q': key[4] = 1; lastKeyPressed = 4;  break;
+		case 'w': key[5] = 1; lastKeyPressed = 5;  break;
+		case 'e': key[6] = 1; lastKeyPressed = 6;  break;
+		case 'r': key[7] = 1; lastKeyPressed = 7;  break;
+		case 'a': key[8] = 1; lastKeyPressed = 8;  break;
+		case 's': key[9] = 1; lastKeyPressed = 9;  break;
+		case 'd': key[10] = 1; lastKeyPressed = 10;  break;
+		case 'f': key[11] = 1; lastKeyPressed = 11;  break;
+		case 'z': key[12] = 1; lastKeyPressed = 12;  break;
+		case 'x': key[13] = 1; lastKeyPressed = 13;  break;
+		case 'c': key[14] = 1; lastKeyPressed = 14;  break;
+		case 'v': key[15] = 1; lastKeyPressed = 15;  break;
 		}
 	}
 
 	@Override
 	public void keyReleased(KeyEvent arg0) {
+		/*
 		switch(arg0.getKeyChar())
 		{
 		case '1': key[0] = 0; break;
@@ -522,7 +636,7 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 		case 'x': key[13] = 0; break;
 		case 'c': key[14] = 0; break;
 		case 'v': key[15] = 0; break;
-		}
+		}*/
 	}
 
 	@Override
