@@ -13,6 +13,8 @@ import java.io.InputStream;
 import java.math.BigInteger;
 import java.util.Random;
 
+import javax.swing.JFrame;
+
 public class Chip8 extends Canvas implements Runnable, KeyListener {
 
 	private static final long serialVersionUID = 1042099242508261715L;
@@ -38,7 +40,11 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 	private int lastKeyPressed = -1;
 	
 	private Random rand = new Random();
+	
+	private JFrame mainWindow = null;
 
+	private int KPS = 0;
+	
 	private byte[] chip8_fontset =
 		{ 
 			0xF, 0x9, 0x9, 0x9, 0xF, // 0
@@ -66,8 +72,9 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 		addKeyListener(this);
 	}
 
-	public void start()
+	public void start(JFrame window)
 	{
+		mainWindow = window;
 		requestFocus();
 		initialize();
 		running = true;
@@ -149,8 +156,12 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 	{		
 		long lastTime = System.nanoTime();
 		double unprocessed = 0;
-		double framerate = 60;
+		double framerate = 600;
 		double nsPerTick = 1000000000.0 / framerate;
+		
+		int IPS = 0;
+		
+		long ipsTimer = System.currentTimeMillis();
 
 		while(running)
 		{
@@ -161,7 +172,7 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 			for (int i = 0; i < (int)unprocessed; i++)
 			{
 				EmulateCycle();
-				drawFlag = true;
+				IPS++;
 			}
 
 			unprocessed -= (int)unprocessed;
@@ -170,6 +181,14 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 			{
 				DrawGraphics();
 				drawFlag = false;
+			}
+			
+			if(System.currentTimeMillis() - ipsTimer >= 1000)
+			{
+				mainWindow.setTitle("IPS : " + IPS + "  |  KPS : " + KPS);
+				ipsTimer = System.currentTimeMillis();
+				IPS = 0;
+				KPS = 0;
 			}
 
 			try {
@@ -218,6 +237,7 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 					gfx[i] = false;
 				
 				PC += 2;
+				drawFlag = true;
 				break;
 
 			case 0x00EE: // Returns from a subroutine.
@@ -225,6 +245,7 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 				{
 					PC = stack[SP];
 					SP--;
+					PC += 2;
 				}
 				break;
 
@@ -306,9 +327,9 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 				
 				result = V[x] + V[y];
 
-				if((result & 0xFF) != 0)
+				if((result & 0x100) != 0)
 				{
-					V[x] = result - 0xFF;
+					V[x] = result - 0x100;
 					V[0xF] = 1;
 				}
 
@@ -407,6 +428,11 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 				{
 					if((pixel & (0x80 >> xLine)) != 0) // Collision detection
 					{
+						int position = (x + xLine) + (y + yLine) * 64;
+						
+						if(position < 0 || position > 2047)
+							break;
+						
 						if(gfx[x + y * 64] == true)
 							V[0xF] = 1;
 
@@ -423,13 +449,14 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 			switch(opcode & 0x00FF)
 			{
 			case 0x009E: // 0xEX9E : Skips the next instruction if the key stored in VX is pressed.
+				KPS++;
 				if(key[V[(opcode & 0x0F00) >> 8]] == 1)
 					PC += 4;
 				
 				else
 					PC += 2;
 				
-				ResetKeys();
+				//ResetKeys();
 				break;
 
 			case 0x00A1: // 0xEXA1 : Skips the next instruction if the key stored in VX isn't pressed.
@@ -439,7 +466,7 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 				else
 					PC += 2;
 				
-				ResetKeys();
+				//ResetKeys();
 				break;
 			}
 			break;
@@ -456,7 +483,7 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 				if(lastKeyPressed != -1)
 				{
 					V[(opcode & 0x0F00) >> 8] = lastKeyPressed;
-					ResetKeys();
+					//ResetKeys();
 					PC += 2;
 				}
 				break;
@@ -472,28 +499,28 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 				break;
 
 			case 0x001E: // 0xFX1E : Adds VX to I.
-				I = (I + V[(opcode & 0x0F00) >> 8]) & 0xFFFF;
+				I = (I + V[(opcode & 0x0F00) >> 8]) & 0xFFF;
 				PC += 2;
 				break;
 
 			case 0x0029: // 0xFX29 : Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font.
 				x = (opcode & 0x0F00) >> 8;
-				I = (V[x] * 5) & 0xFFFF;
+				I = (V[x] * 5);
 				PC += 2;
 				break;
 
 			case 0x0033: // 0xFX33 : Stores the Binary-coded decimal representation of VX, with the most significant of three digits at the address in I, the middle digit at I plus 1, and the least significant digit at I plus 2.
 				memory[I] = (byte) (V[(opcode & 0x0F00) >> 8] / 100);
 				memory[I + 1] = (byte) ((V[(opcode & 0x0F00) >> 8] / 10) % 10);
-				memory[I + 2] = (byte) ((V[(opcode & 0x0F00) >> 8] % 100) % 10);
+				memory[I + 2] = (byte) (V[(opcode & 0x0F00) >> 8] % 10);
 				PC += 2;
 				break;
 
 			case 0x0055: // 0xFX55 : Stores V0 to VX in memory starting at address I.
 				x = (opcode & 0x0F00) >> 8;
 				
-				for(int i = 0; i < x; i++)
-					memory[I + i] = (byte) (V[i] & 0x00FF);
+				for(int i = 0; i <= x; i++)
+					memory[I++] = (byte) (V[i] & 0x00FF);		
 				
 				PC += 2;
 				break;
@@ -501,12 +528,10 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 			case 0x0065: // 0xFX65 : Fills V0 to VX with values from memory starting at address I.
 				x = (opcode & 0x0F00) >> 8;
 
-				for(int i = 0; i <= x; ++i)
-				{
-					V[i] = memory[I + i] & 0xFF;
-				}
-				PC += 2;
+				for(int i = 0; i <= x; i++)
+					V[i] = memory[I++] & 0xFF;
 
+				PC += 2;
 				break;
 			}
 			break;
@@ -594,6 +619,7 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 
 	@Override
 	public void keyPressed(KeyEvent arg0) {
+		//KPS++;
 		switch(arg0.getKeyChar())
 		{
 		case '1': key[0] = 1; lastKeyPressed = 0; break;
@@ -617,7 +643,7 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 
 	@Override
 	public void keyReleased(KeyEvent arg0) {
-		/*
+		
 		switch(arg0.getKeyChar())
 		{
 		case '1': key[0] = 0; break;
@@ -636,7 +662,7 @@ public class Chip8 extends Canvas implements Runnable, KeyListener {
 		case 'x': key[13] = 0; break;
 		case 'c': key[14] = 0; break;
 		case 'v': key[15] = 0; break;
-		}*/
+		}
 	}
 
 	@Override

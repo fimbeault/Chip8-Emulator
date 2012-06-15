@@ -8,7 +8,7 @@ import javax.swing.JRootPane;
 
 public class Application {
 
-	private static JFrame mainWindow;	
+	public static JFrame mainWindow;	
 	private static int pixelSize = 8;
 	
 	private static Chip8 emulator = null;
@@ -36,7 +36,7 @@ public class Application {
 		Thread thread = new Thread(emulator);
         thread.setPriority(Thread.MAX_PRIORITY);
         
-        emulator.start();
+        emulator.start(mainWindow);
         emulator.loadGame("Games/INVADERS");
         
         thread.start();
